@@ -3,12 +3,15 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql" // or "mysql", "sqlite", etc.
   url      = env("DATABASE_URL")
 }
 
 model Thread {
   id        String   @id @default(cuid())
-  posts     Json[]   // Stores array of posts
+  content   String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("threads")
 }

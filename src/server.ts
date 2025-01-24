@@ -1,37 +1,69 @@
-import express from 'express';
-import { PrismaClient } from '@prisma/client';
-import { BlueskyService } from './bluesky';
+import { Elysia } from 'elysia';
+import { BskyAgent, RichText } from '@atproto/api'; // Use the Bluesky Agent for direct authentication
+import { createThread, getThreadById } from './storage';
 
-const app = express();
-const prisma = new PrismaClient();
-const bluesky = new BlueskyService();
+const BLUESKY_USERNAME = process.env.BLUESKY_USERNAME || "";
+const BLUESKY_PASSWORD = process.env.BLUESKY_PASSWORD || "";
 
-app.get('/thread/:id', async (req, res) => {
-    const thread = await prisma.thread.findUnique({
-        where: { id: req.params.id }
-    });
+if (BLUESKY_USERNAME.length == 0 || BLUESKY_PASSWORD.length == 0) {
+    throw new Error('Bluesky credentials are missing in the .env file');
+}
 
-    if (!thread) {
-        return res.status(404).json({ error: 'Thread not found' });
-    }
+// Initialize the Bluesky Agent
+const agent = new BskyAgent({ service: 'https://bsky.social' });
 
-    res.render('thread', { thread });
-});
-
-// Webhook endpoint for bot mentions
-app.post('/webhook', async (req, res) => {
-    const { postId } = req.body;
-
+// Authenticate the bot using credentials from .env
+async function authenticateBot() {
     try {
-        const thread = await bluesky.fetchThread(postId);
-        await prisma.thread.create({
-            data: thread
-        });
-
-        res.json({ success: true, threadId: thread.id });
+        await agent.login({
+            identifier: BLUESKY_USERNAME,
+            password: BLUESKY_PASSWORD
+        })
+        console.log('Bot authenticated successfully!');
     } catch (error) {
-        res.status(500).json({ error: 'Failed to process thread' });
+        console.error('Failed to authenticate bot:', error);
+        throw error;
     }
-});
+}
 
-app.listen(3000);
+await authenticateBot();
+
+async function post(text: string) {
+    const richText = new RichText({ text });
+    await richText.detectFacets(agent);
+
+    await agent.post({
+        text: richText.text,
+        facets: richText.facets,
+    });
+}
+
+async function fetchPost(postId: string) {
+    const threadView = await agent.getPostThread({ uri: postId });
+    return threadView;
+}
+
+console.log(await fetchPost("https://bsky.app/profile/bluethreadapp.bsky.social/post/3lgjfbswuvf2x"))
+
+const app = new Elysia()
+    .get('/', () => 'Hello Bun!')
+    .get('/thread/:id', async ({ params: { id }, set }) => {
+        try {
+            // Fetch the post using the authenticated agent
+            const post = await agent.getPost({ uri: id });
+            return post.data;
+        } catch (error) {
+            set.status = 404;
+            return 'Post not found';
+        }
+    })
+    .post('/thread', async ({ body }) => {
+        const { content } = body as { content: string };
+        const thread = await createThread(content);
+        return { id: thread.id };
+    })
+    .listen(3000);
+
+console.log(
+    `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
+);
