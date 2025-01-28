@@ -11,6 +11,7 @@
     "@atproto/api": "^0.6.0",
     "@atproto/oauth-client-node": "^0.2.8",
     "@prisma/client": "^6.2.1",
+    "@skyware/jetstream": "^0.2.2",
     "elysia": "^1.2.10"
   },
   "devDependencies": {
